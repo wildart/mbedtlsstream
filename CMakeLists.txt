@@ -1,0 +1,97 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+PROJECT(mbedtlsstream C)
+
+# Add find modules to the path
+SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
+
+INCLUDE(CheckIncludeFiles)
+INCLUDE(CheckLibraryExists)
+INCLUDE(AddCFlagIfSupported)
+INCLUDE(FindPkgConfig)
+
+CHECK_INCLUDE_FILES(string.h HAVE_STRING_H)
+CHECK_INCLUDE_FILES("sys/types.h;sys/stat.h" HAVE_SYS_STAT_H)
+
+SET(CMAKE_C_FLAGS "-D_GNU_SOURCE -Wall -Wextra ${CMAKE_C_FLAGS}")
+ADD_C_FLAG_IF_SUPPORTED(-fvisibility=hidden)
+
+# Installation paths
+#
+SET(BIN_INSTALL_DIR bin CACHE PATH "Where to install binaries to.")
+SET(LIB_INSTALL_DIR lib CACHE PATH "Where to install libraries to.")
+SET(INCLUDE_INSTALL_DIR include CACHE PATH "Where to install headers to.")
+
+# Set a couple variables to be substituted inside the .pc file.
+# We can't just use LIB_INSTALL_DIR in the .pc file, as passing them as absolue
+# or relative paths is both valid and supported by cmake.
+SET (PKGCONFIG_PREFIX ${CMAKE_INSTALL_PREFIX})
+
+IF(IS_ABSOLUTE ${LIB_INSTALL_DIR})
+  SET (PKGCONFIG_LIBDIR ${LIB_INSTALL_DIR})
+ELSE(IS_ABSOLUTE ${LIB_INSTALL_DIR})
+  SET (PKGCONFIG_LIBDIR "\${prefix}/${LIB_INSTALL_DIR}")
+ENDIF (IS_ABSOLUTE ${LIB_INSTALL_DIR})
+
+IF(IS_ABSOLUTE ${INCLUDE_INSTALL_DIR})
+  SET (PKGCONFIG_INCLUDEDIR ${INCLUDE_INSTALL_DIR})
+ELSE(IS_ABSOLUTE ${INCLUDE_INSTALL_DIR})
+  SET (PKGCONFIG_INCLUDEDIR "\${prefix}/${INCLUDE_INSTALL_DIR}")
+ENDIF(IS_ABSOLUTE ${INCLUDE_INSTALL_DIR})
+
+FIND_PACKAGE(HTTP_Parser)
+IF (HTTP_PARSER_FOUND AND HTTP_PARSER_VERSION_MAJOR EQUAL 2)
+	INCLUDE_DIRECTORIES(${HTTP_PARSER_INCLUDE_DIRS})
+	LINK_LIBRARIES(${HTTP_PARSER_LIBRARIES})
+ELSE()
+	MESSAGE(STATUS "http-parser was not found.")
+ENDIF()
+
+FIND_PACKAGE(mbedTLS)
+IF (MBEDTLS_FOUND)
+  INCLUDE_DIRECTORIES(${MBEDTLS_INCLUDE_DIR})
+ENDIF()
+
+PKG_CHECK_MODULES(LIBGIT2 libgit2)
+IF (LIBGIT2_FOUND)
+	INCLUDE_DIRECTORIES(${LIBGIT2_INCLUDE_DIRS})
+	LINK_DIRECTORIES(${LIBGIT2_LIBRARY_DIRS})
+ELSE()
+	MESSAGE(STATUS "LIBGIT2 not found. Set CMAKE_PREFIX_PATH if it is installed outside of the default search path.")
+ENDIF()
+
+IF( NOT CMAKE_CONFIGURATION_TYPES )
+	# Build Debug by default
+	IF (NOT CMAKE_BUILD_TYPE)
+		SET(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
+	ENDIF ()
+ENDIF()
+
+# Determine architecture of the machine
+IF (CMAKE_SIZEOF_VOID_P EQUAL 8)
+	ADD_DEFINITIONS(-DGIT_ARCH_64)
+ELSEIF (CMAKE_SIZEOF_VOID_P EQUAL 4)
+	ADD_DEFINITIONS(-DGIT_ARCH_32)
+ELSE()
+	MESSAGE(FATAL_ERROR "Unsupported architecture")
+ENDIF()
+
+INCLUDE_DIRECTORIES(include)
+ADD_LIBRARY(mbedtlsstream SHARED
+	src/common.h
+	src/mbedtlsstream.c
+	src/netops.h
+	src/netops.c
+	src/posix.h
+	src/posix.c
+	src/socket_stream.h
+	src/socket_stream.c
+	src/stream.h
+)
+TARGET_LINK_LIBRARIES(mbedtlsstream ${MBEDTLS_LIBRARIES} ${LIBGIT2_LIBRARIES} ${HTTP_PARSER_LIBRARIES})
+
+# Install
+INSTALL(TARGETS mbedtlsstream
+	RUNTIME DESTINATION ${BIN_INSTALL_DIR}
+	LIBRARY DESTINATION ${LIB_INSTALL_DIR}
+	ARCHIVE DESTINATION ${LIB_INSTALL_DIR}
+)
